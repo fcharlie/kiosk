@@ -291,6 +291,7 @@ public:
                                                           std::move(value)));
     return *this;
   }
+  size_t EnvSize() const { return buflen; }
   wchar_t *DuplicateEnv() {
     if (envbuf != nullptr) {
       HeapFreeEx(envbuf);
@@ -313,6 +314,7 @@ public:
       it += e.first.size();
       if (e.second.empty()) {
         *it++ = L'\0';
+        continue;
       }
       *it++ = L'=';
       wmemcpy(it, e.second.data(), e.second.size());

@@ -67,13 +67,13 @@ bool HttpProcess::Execute(std::wstring_view path,
     if (mexe.find(L' ') != std::wstring_view::npos) {
       cmdline.assign(L"\"").append(mexe).append(L"\" ");
     } else {
-      cmdline.assign(std::move(mexe)).append(L"\" ");
+      cmdline.assign(std::move(mexe)).append(L" ");
     }
   } else {
     if (path.find(L' ') != std::wstring_view::npos) {
       cmdline.assign(L"\"").append(path).append(L"\" ");
     } else {
-      cmdline.assign(path).append(L"\" ");
+      cmdline.assign(path).append(L" ");
     }
   }
   for (const auto &a : args) {
