@@ -8,6 +8,7 @@
 #include <cpprest/details/http_helpers.h>
 #include <cpprest/filestream.h>
 #include <cpprest/producerconsumerstream.h>
+#include <cpprest/rawptrstream.h>
 #include "process.hpp"
 #include "context.hpp"
 
@@ -18,6 +19,11 @@ using namespace utility;
 using namespace client;
 using namespace concurrency;
 using namespace http::experimental::listener;
+using stream_decompressor =
+    web::http::details::compression::stream_decompressor;
+using compression_algorithm =
+    web::http::details::compression::compression_algorithm;
+using data_buffer = web::http::details::compression::data_buffer;
 } // namespace net
 
 class AsyncInput {
@@ -41,7 +47,8 @@ public:
   void HandleServiceRefs();
   void HandleServiceRpc();
   void CopyFromStdout(const net::error_code &ec, size_t byres);
-  void WriteToStdin();
+  void ReceiveBody(size_t bytes);
+  void RpcResponse();
 
 private:
   HttpContext *context;
@@ -51,7 +58,8 @@ private:
       decompressor_;
   std::shared_ptr<HttpProcess> process;
   net::streams::producer_consumer_buffer<uint8_t> outs;
-  net::streams::streambuf<uint8_t> target;
+  // net::streams::rawptr_buffer<uint8_t> ins;
+  net::data_buffer decbuf;
   uint8_t buffer[8192];
 };
 
