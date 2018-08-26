@@ -282,16 +282,16 @@ public:
     menvcopy = Envcontext::Instance().MapEnv();
     return *this;
   }
-  Env &SetEnv(const wchar_t *key, const wchar_t *value, bool overwrite) {
+  Env &SetEnv(std::wstring key, std::wstring value, bool overwrite) {
     auto it = menvcopy.find(key);
     if (it != menvcopy.end() && !overwrite) {
       return *this;
     }
-    menvcopy.insert(std::pair<std::wstring, std::wstring>(key, value));
+    menvcopy.insert(std::pair<std::wstring, std::wstring>(std::move(key),
+                                                          std::move(value)));
     return *this;
   }
-  const wchar_t *DuplicateEnv() {
-    //
+  wchar_t *DuplicateEnv() {
     if (envbuf != nullptr) {
       HeapFreeEx(envbuf);
       envbuf = nullptr;

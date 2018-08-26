@@ -4,7 +4,8 @@
 
 ///
 
-constexpr const auto GIT_PROTOCOL = L"GIT_PROTOCOL";
+constexpr const auto GIT_PROTOCOL_HEADER = L"Git-Protocol";
+constexpr const auto GIT_PROTOCOL_ENVIRONMENT = L"GIT_PROTOCOL";
 
 inline bool EndsWith(std::wstring_view s, std::wstring_view suffix) {
   if (s.size() < suffix.size()) {
@@ -20,7 +21,7 @@ void renderNotFond(net::http_request msg) {
 
 std::optional<std::wstring> HttpSession::PathRepoExist(const std::wstring &rp) {
   // TODO get path
-  auto np = context->Root() + L"\\" + rp;
+  auto np = context->Root() + rp; // url start with '/'
   auto attr = GetFileAttributesW(np.c_str());
   if (attr != INVALID_FILE_ATTRIBUTES &&
       (attr & FILE_ATTRIBUTE_DIRECTORY) != 0) {
@@ -60,12 +61,12 @@ inline const wchar_t *servicecmd(const std::wstring &s) {
 }
 
 void HttpSession::HandleServiceRefs() {
-  auto path = net::http::uri::decode(msg.relative_uri().path);
+  auto path = net::http::uri::decode(msg.relative_uri().path());
   if (!EndsWith(path, L"/info/refs")) {
     msg.reply(404, "Not Found");
     return;
   }
-  path.resize(path.size() - sizeof("/info/refs") - 1);
+  path.resize(path.size() - sizeof("/info/refs") + 1);
   auto query = net::uri::split_query(msg.relative_uri().query());
   auto it = query.find(L"service");
   if (it == query.end()) {
@@ -79,22 +80,70 @@ void HttpSession::HandleServiceRefs() {
   }
   auto opath = PathRepoExist(path);
   if (!opath) {
-    msg.reply(404, "Not Found");
+    msg.reply(404, "Repository Not Found");
     return;
   }
   std::wstring version;
-  auto it = msg.headers().find(GIT_PROTOCOL);
-  if (it != msg.headers().end()) {
-    version = it->second;
+  auto ite = msg.headers().find(GIT_PROTOCOL_HEADER);
+  if (ite != msg.headers().end()) {
+    version = ite->second;
   }
-  if (version.empty()) {
-    ////
+  fwprintf_s(stderr, L"git %s --stateless-rpc --advertise-refs %s\n", cmd,
+             opath->c_str());
+  process = std::make_shared<HttpProcess>(context->context());
+  // start process git $service --stateless-rpc --advertise-refs $gitdir
+  std::vector<std::wstring_view> Args;
+  /// git other flags todo
+  Args.push_back(cmd);
+  Args.push_back(L"--stateless-rpc");
+  Args.push_back(L"--advertise-refs");
+  Args.push_back(*opath); /// path
+  std::vector<std::wstring_view> Envs;
+  if (!version.empty()) {
+    Envs.push_back(
+        std::wstring(GIT_PROTOCOL_ENVIRONMENT).append(L"=").append(version));
+    // Encode services to buffer
   }
-  ///
-  //////////////
+  // run process
+  if (!process->Execute(context->Gitexe(), Args, Envs)) {
+    msg.reply(net::status_codes::InternalError, "Internal Server Error");
+    return;
+  }
+
+  resp.headers().add(L"Expires", L"Fri, 01 Jan 1980 00:00:00 GMT");
+  resp.headers().add(L"Pragma", L"no-cache");
+  resp.headers().add(L"Cache-Control", L"no-cache, max-age=0, must-revalidate");
+  resp.set_status_code(net::status_codes::OK);
+  constexpr uint8_t uchunk[] = "001e# service=git-upload-pack\n0000";
+  constexpr uint8_t rchunk[] = "001f# service=git-receive-pack\n0000";
+  const uint8_t *chptr;
+  size_t cklen;
+  // net::streams::basic_istream<uint8_t> stream(outs);
+  if (wcscmp(cmd, L"receive-pack") == 0) {
+    resp.set_body(outs, L"application/x-git-upload-pack-advertisement");
+    chptr = rchunk;
+    cklen = std::size(rchunk) - 1;
+  } else {
+    resp.set_body(outs, L"application/x-git-receive-pack-advertisement");
+    chptr = uchunk;
+    cklen = std::size(uchunk) - 1;
+  }
+  msg.reply(resp);
+  auto self(shared_from_this());
+  outs.putn_nocopy(chptr, cklen).then([this, self, cklen](size_t bytes) {
+    if (cklen != bytes) {
+      return;
+    }
+    process->async_read(net::buffer(buffer),
+                        std::bind(&HttpSession::CopyFromStdout,
+                                  shared_from_this(), std::placeholders::_1,
+                                  std::placeholders::_2));
+  });
 }
+
+// Service RPC
 void HttpSession::HandleServiceRpc() {
-  auto path = net::http::uri::decode(msg.relative_uri().path);
+  auto path = net::http::uri::decode(msg.relative_uri().path());
   auto np = path.rfind(L'/');
   if (np == std::wstring::npos) {
     msg.reply(net::status_codes::BadRequest, "Unsupport url");
@@ -111,8 +160,9 @@ void HttpSession::HandleServiceRpc() {
     msg.reply(404, "Not Found");
     return;
   }
+
   std::wstring version;
-  auto it = msg.headers().find(GIT_PROTOCOL);
+  auto it = msg.headers().find(GIT_PROTOCOL_HEADER);
   if (it != msg.headers().end()) {
     version = it->second;
   }
@@ -131,16 +181,18 @@ void HttpSession::WriteToStdin() {
 
 void HttpSession::CopyFromStdout(const net::error_code &ec, size_t bytes) {
   if (ec) {
+    outs.close(std::ios_base::out);
     return;
   }
+  //fwrite(buffer, 1, bytes, stderr);
   auto self(shared_from_this());
-  buf.putn_nocopy(buffer, bytes).then([this, self, bytes](size_t p) {
+  outs.putn_nocopy(buffer, bytes).then([this, self, bytes](size_t p) {
     if (bytes != p) {
       return;
     }
     process->async_read(net::buffer(buffer),
-                        std::bind(&HttpSession::CopyFromStdout, shared_from_this(),
-                                  std::placeholders::_1,
+                        std::bind(&HttpSession::CopyFromStdout,
+                                  shared_from_this(), std::placeholders::_1,
                                   std::placeholders::_2));
   });
 }

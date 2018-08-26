@@ -23,6 +23,10 @@ public:
   HttpProcess(net::io_context_t &ctx) : input_(ctx), output_(ctx) {
     //
   }
+  ~HttpProcess(){
+	  // TODO
+	  cancel();
+  }
   template <typename ConstBufferSequence, typename WriteHandler>
   void async_write_some(const ConstBufferSequence &buffers,
                         WriteHandler &&handler) {
@@ -60,13 +64,13 @@ public:
     }
   }
   bool Execute(std::wstring_view cmd, std::vector<std::wstring_view> args,
-               std::vector<std::wstring_view> envs = empty);
+               std::vector<std::wstring_view> envs = EmptyEnvs);
 
 private:
   net::stdiostream_t input_;
   net::stdiostream_t output_;
   ProcessId id{0};
-  static std::vector<std::wstring_view> empty;
+  static std::vector<std::wstring_view> EmptyEnvs;
 };
 
 #endif

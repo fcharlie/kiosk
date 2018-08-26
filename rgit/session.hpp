@@ -33,6 +33,7 @@ public:
       : context(ctx), msg(msg_) {
     //
   }
+
   std::optional<std::wstring> PathRepoExist(const std::wstring &rp);
 
   static void HttpHandlePost(HttpContext *ctx, net::http_request msg);
@@ -49,7 +50,7 @@ private:
   std::unique_ptr<web::http::details::compression::stream_decompressor>
       decompressor_;
   std::shared_ptr<HttpProcess> process;
-  net::streams::producer_consumer_buffer<uint8_t> buf;
+  net::streams::producer_consumer_buffer<uint8_t> outs;
   net::streams::streambuf<uint8_t> target;
   uint8_t buffer[8192];
 };
